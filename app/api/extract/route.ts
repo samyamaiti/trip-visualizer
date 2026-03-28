@@ -10,6 +10,17 @@ type OpenAIErrorLike = {
   status?: number;
 };
 
+function isPlaceholderApiKey(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return true;
+  return (
+    normalized.includes("your_openai_api_key") ||
+    normalized.includes("your_openai_key") ||
+    normalized.includes("your_api_key") ||
+    normalized.startsWith("your_")
+  );
+}
+
 async function runExtractionWithFallbackModels(client: OpenAI, documentText: string) {
   const preferredModel = process.env.OPENAI_EXTRACT_MODEL?.trim();
   const candidateModels = [preferredModel, "gpt-4.1", "gpt-4.1-mini", "gpt-4o-mini"].filter(
@@ -67,6 +78,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "OPENAI_API_KEY is not configured for DOCX extraction." }, { status: 503 });
     }
 
+    if (isPlaceholderApiKey(process.env.OPENAI_API_KEY)) {
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY is set to a placeholder value. Set a real key in Vercel project environment variables." },
+        { status: 503 }
+      );
+    }
+
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const { outputText, model } = await runExtractionWithFallbackModels(client, documentText);
     const parsedTrip = parseTripPayload(outputText);
@@ -79,6 +97,16 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error(error);
     const err = error as OpenAIErrorLike;
+    if (err?.status === 401 || err?.code === "invalid_api_key") {
+      return NextResponse.json(
+        {
+          error: "OPENAI_API_KEY is invalid for this deployment. Update it in Vercel and redeploy.",
+          details: "OpenAI authentication failed (401)."
+        },
+        { status: 401 }
+      );
+    }
+
     return NextResponse.json(
       {
         error: err?.message || "Extraction failed",
