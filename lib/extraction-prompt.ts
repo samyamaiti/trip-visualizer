@@ -1,6 +1,6 @@
 export const EXTRACTION_SYSTEM_PROMPT = `You are an itinerary extraction engine.
 
-Your job is to convert travel documents (PDF or DOCX text) into strict JSON.
+Your job is to convert DOCX travel document text into strict JSON.
 
 Rules:
 1. Output valid JSON only.

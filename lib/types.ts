@@ -1,4 +1,4 @@
-export type SourceType = "pdf" | "docx";
+export type SourceType = "docx";
 
 export type AllowedCategory =
   | "flight_arrival"
@@ -137,4 +137,16 @@ export interface TripPayload {
       routing: string;
     };
   };
+}
+
+export interface MapPlace {
+  id: string;
+  dayNumber: number;
+  name: string;
+  category: string;
+  timeLabel: string | null;
+  lat: number;
+  lng: number;
+  address: string;
+  image: string;
 }

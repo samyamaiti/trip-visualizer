@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Trip Visualizer",
-  description: "Upload a PDF or DOCX itinerary and view a mapped travel plan."
+  description: "Upload a DOCX itinerary and view a mapped travel plan."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

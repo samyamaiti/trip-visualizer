@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
-import type { MapPlace } from "@/lib/sample-trip";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import type { MapPlace } from "@/lib/types";
 
 interface MapClientProps {
   places: MapPlace[];
@@ -11,27 +11,44 @@ interface MapClientProps {
 }
 
 export default function MapClient({ places, selectedDay }: MapClientProps) {
-  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    if (!token) return;
 
-    mapboxgl.accessToken = token;
-    const map = new mapboxgl.Map({
+    const map = new maplibregl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/mapbox/streets-v12",
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: "raster",
+            tiles: [
+              "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+              "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+              "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            ],
+            tileSize: 256,
+            attribution: "&copy; OpenStreetMap contributors"
+          }
+        },
+        layers: [
+          {
+            id: "osm",
+            type: "raster",
+            source: "osm"
+          }
+        ]
+      },
       center: [115.1889, -8.4095],
       zoom: 9
     });
 
     mapRef.current = map;
-    map.addControl(new mapboxgl.NavigationControl(), "top-right");
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
     map.once("load", () => {
       setMapReady(true);
       setMapError(null);
@@ -45,7 +62,7 @@ export default function MapClient({ places, selectedDay }: MapClientProps) {
       mapRef.current = null;
       setMapReady(false);
     };
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -94,7 +111,7 @@ export default function MapClient({ places, selectedDay }: MapClientProps) {
     if (!map.isStyleLoaded()) return;
 
     if (map.getSource(pointsId)) {
-      (map.getSource(pointsId) as mapboxgl.GeoJSONSource).setData(pointsData as never);
+      (map.getSource(pointsId) as maplibregl.GeoJSONSource).setData(pointsData as never);
     } else {
       map.addSource(pointsId, { type: "geojson", data: pointsData as never });
       map.addLayer({
@@ -104,13 +121,14 @@ export default function MapClient({ places, selectedDay }: MapClientProps) {
         paint: {
           "circle-radius": 7,
           "circle-stroke-width": 2,
-          "circle-stroke-color": "#ffffff"
+          "circle-stroke-color": "#ffffff",
+          "circle-color": "#0f172a"
         }
       });
     }
 
     if (map.getSource(routeId)) {
-      (map.getSource(routeId) as mapboxgl.GeoJSONSource).setData(routeData as never);
+      (map.getSource(routeId) as maplibregl.GeoJSONSource).setData(routeData as never);
     } else {
       map.addSource(routeId, { type: "geojson", data: routeData as never });
       map.addLayer({
@@ -119,22 +137,23 @@ export default function MapClient({ places, selectedDay }: MapClientProps) {
         source: routeId,
         paint: {
           "line-width": 4,
-          "line-opacity": 0.9
+          "line-opacity": 0.9,
+          "line-color": "#2563eb"
         }
       });
     }
 
-    const bounds = new mapboxgl.LngLatBounds();
+    const bounds = new maplibregl.LngLatBounds();
     dayPlaces.forEach((place) => bounds.extend([place.lng, place.lat]));
     if (!bounds.isEmpty()) {
       map.fitBounds(bounds, { padding: 48, duration: 500 });
     }
   }, [mapReady, places, selectedDay]);
 
-  if (!token) {
+  if (places.length === 0) {
     return (
       <div style={{ height: 420, display: "grid", placeItems: "center", background: "#f1f5f9", borderRadius: 24 }}>
-        Add NEXT_PUBLIC_MAPBOX_TOKEN to render the live map.
+        Upload a DOCX itinerary to render the live map.
       </div>
     );
   }

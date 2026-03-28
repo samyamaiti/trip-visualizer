@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import MapClient from "@/components/MapClient";
-import { sampleMapPlaces, sampleTrip } from "@/lib/sample-trip";
-import type { TripPayload } from "@/lib/types";
+import type { MapPlace, TripPayload } from "@/lib/types";
 
 function cardStyle(selected = false): React.CSSProperties {
   return {
@@ -21,37 +20,44 @@ type UploadState = {
 };
 
 export default function Page() {
-  const [trip, setTrip] = useState<TripPayload>(sampleTrip);
+  const [trip, setTrip] = useState<TripPayload | null>(null);
+  const [mapPlaces, setMapPlaces] = useState<MapPlace[]>([]);
   const [selectedDay, setSelectedDay] = useState(1);
   const [search, setSearch] = useState("");
   const [uploadState, setUploadState] = useState<UploadState>({ status: "idle", message: null });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const days = trip.days;
+  const days = trip?.days ?? [];
 
   useEffect(() => {
-    if (!days.some((item) => item.dayNumber === selectedDay)) {
+    if (days.length > 0 && !days.some((item) => item.dayNumber === selectedDay)) {
       setSelectedDay(days[0]?.dayNumber ?? 1);
     }
   }, [days, selectedDay]);
 
   const day = days.find((item) => item.dayNumber === selectedDay) ?? days[0];
+  const dayItems = day?.items ?? [];
   const filteredItems = useMemo(() => {
-    if (!day) return [];
-    return day.items.filter((item) => {
+    return dayItems.filter((item) => {
       const q = search.trim().toLowerCase();
       if (!q) return true;
       return item.name.toLowerCase().includes(q) || (item.placeQuery ?? "").toLowerCase().includes(q);
     });
-  }, [day.items, search]);
+  }, [dayItems, search]);
 
   const dayDistance = filteredItems.reduce((acc, item) => acc + (item.distanceKm ?? 0), 0);
   const dayDuration = filteredItems.reduce((acc, item) => acc + (item.durationMin ?? 0), 0);
-  const activeMapPlaces = trip.trip.id === sampleTrip.trip.id ? sampleMapPlaces : [];
+  const selectedDayPlaces = mapPlaces.filter((place) => place.dayNumber === selectedDay);
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".docx")) {
+      setUploadState({ status: "error", message: "Only DOCX uploads are supported right now." });
+      event.target.value = "";
+      return;
+    }
 
     setUploadState({ status: "uploading", message: `Uploading ${file.name}...` });
 
@@ -69,17 +75,34 @@ export default function Page() {
         throw new Error(payload.error ?? "Upload failed");
       }
 
-      const nextTrip = payload.trip ?? payload.fallback;
+      const nextTrip = payload.trip;
       if (!nextTrip) {
         throw new Error("No trip data was returned from the upload.");
       }
 
       setTrip(nextTrip);
       setSelectedDay(nextTrip.days[0]?.dayNumber ?? 1);
+      setMapPlaces([]);
       setSearch("");
+      setUploadState({ status: "uploading", message: `Extracted ${file.name}. Mapping itinerary...` });
+
+      const geocodeResponse = await fetch("/api/geocode", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ trip: nextTrip })
+      });
+      const geocodePayload = await geocodeResponse.json();
+
+      if (!geocodeResponse.ok) {
+        throw new Error(geocodePayload.error ?? "The itinerary was extracted but map geocoding failed.");
+      }
+
+      setMapPlaces(geocodePayload.places ?? []);
       setUploadState({
         status: "success",
-        message: payload.warning ?? `Loaded ${file.name}.`
+        message: geocodePayload.warning ?? `Loaded ${file.name} and mapped the extracted itinerary.`
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Upload failed";
@@ -96,14 +119,14 @@ export default function Page() {
           <div>
             <h1 style={{ margin: 0, fontSize: 32 }}>Trip Visualizer</h1>
             <p style={{ margin: "8px 0 0", color: "#475569" }}>
-              Upload a PDF or DOCX itinerary and view route distances, mapped stops, images, and recommendations.
+              Upload a DOCX itinerary and turn it into a day-by-day travel timeline with a live route map.
             </p>
           </div>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.docx"
+              accept=".docx"
               onChange={handleFileChange}
               style={{ display: "none" }}
             />
@@ -120,7 +143,7 @@ export default function Page() {
                 cursor: uploadState.status === "uploading" ? "wait" : "pointer"
               }}
             >
-              {uploadState.status === "uploading" ? "Uploading..." : "Upload PDF / DOCX"}
+              {uploadState.status === "uploading" ? "Processing..." : "Upload DOCX"}
             </button>
           </div>
         </div>
@@ -138,10 +161,10 @@ export default function Page() {
           </div>
         )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 16 }}>
-          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Destination</div><div style={{ fontSize: 22, fontWeight: 700 }}>{trip.trip.destination}</div></div>
-          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Travel dates</div><div style={{ fontSize: 22, fontWeight: 700 }}>{trip.trip.startDate} to {trip.trip.endDate}</div></div>
-          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Filtered day distance</div><div style={{ fontSize: 22, fontWeight: 700 }}>{dayDistance.toFixed(1)} km</div></div>
-          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Filtered travel time</div><div style={{ fontSize: 22, fontWeight: 700 }}>{dayDuration} min</div></div>
+          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Destination</div><div style={{ fontSize: 22, fontWeight: 700 }}>{trip?.trip.destination ?? "Upload a DOCX"}</div></div>
+          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Travel dates</div><div style={{ fontSize: 22, fontWeight: 700 }}>{trip ? `${trip.trip.startDate} to ${trip.trip.endDate}` : "Waiting for itinerary"}</div></div>
+          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Trip days</div><div style={{ fontSize: 22, fontWeight: 700 }}>{trip?.days.length ?? 0}</div></div>
+          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Mapped stops</div><div style={{ fontSize: 22, fontWeight: 700 }}>{mapPlaces.length}</div></div>
         </div>
       </section>
 
@@ -154,9 +177,10 @@ export default function Page() {
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search places"
               style={{ padding: "10px 12px", minWidth: 220, borderRadius: 12, border: "1px solid #cbd5e1" }}
+              disabled={!trip}
             />
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+          {trip ? <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
             {days.map((tripDay) => (
               <button
                 key={tripDay.dayNumber}
@@ -172,10 +196,18 @@ export default function Page() {
                 Day {tripDay.dayNumber}
               </button>
             ))}
-          </div>
+          </div> : null}
 
           <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
-            {filteredItems.length === 0 && (
+            {!trip && (
+              <div style={cardStyle()}>
+                <div style={{ fontWeight: 700, fontSize: 18 }}>Upload a DOCX itinerary to begin</div>
+                <p style={{ margin: "8px 0 0", color: "#475569" }}>
+                  The app will extract days, flights, stays, and activities from your document and visualize them here.
+                </p>
+              </div>
+            )}
+            {trip && filteredItems.length === 0 && (
               <div style={cardStyle()}>
                 <div style={{ fontWeight: 700, fontSize: 18 }}>No itinerary items for this filter</div>
                 <p style={{ margin: "8px 0 0", color: "#475569" }}>
@@ -208,23 +240,29 @@ export default function Page() {
         <div style={{ display: "grid", gap: 16 }}>
           <div style={cardStyle()}>
             <h2 style={{ marginTop: 0 }}>Map</h2>
-            <MapClient places={activeMapPlaces} selectedDay={selectedDay} />
-            {activeMapPlaces.length === 0 && (
+            <MapClient places={mapPlaces} selectedDay={selectedDay} />
+            {trip && selectedDayPlaces.length === 0 && mapPlaces.length > 0 && (
               <p style={{ margin: "12px 0 0", color: "#475569" }}>
-                Live map points are only available for the bundled Bali sample until geocoding is added for uploaded trips.
+                No mapped stops were resolved for the selected day, but other trip locations were found.
               </p>
             )}
           </div>
 
           <div style={cardStyle()}>
-            <h2 style={{ marginTop: 0 }}>Recommendation logic for this itinerary</h2>
-            <ul style={{ margin: 0, paddingLeft: 20, color: "#475569", lineHeight: 1.6 }}>
-              <li>Favor low-detour places near the current stop and next stop.</li>
-              <li>Boost child-friendly places because the trip includes a 4-year-old.</li>
-              <li>Boost breakfast suggestions in Uluwatu because the booked stay there has no breakfast included.</li>
-              <li>Avoid steep or risky add-ons in Nusa Penida.</li>
-              <li>Prefer walkable suggestions around central Ubud and the Palace area.</li>
-            </ul>
+            <h2 style={{ marginTop: 0 }}>Extracted Trip Context</h2>
+            {trip ? (
+              <div style={{ display: "grid", gap: 10, color: "#475569" }}>
+                <div><strong style={{ color: "#0f172a" }}>Source document:</strong> {trip.source.fileName}</div>
+                <div><strong style={{ color: "#0f172a" }}>Travelers:</strong> {trip.trip.travelers.summary}</div>
+                <div><strong style={{ color: "#0f172a" }}>Route:</strong> {trip.trip.routeRegions.map((region) => `${region.name} (${region.nights} nights)`).join(" -> ")}</div>
+                <div><strong style={{ color: "#0f172a" }}>Filtered day distance:</strong> {dayDistance.toFixed(1)} km</div>
+                <div><strong style={{ color: "#0f172a" }}>Filtered travel time:</strong> {dayDuration} min</div>
+              </div>
+            ) : (
+              <p style={{ margin: 0, color: "#475569" }}>
+                Once you upload a DOCX itinerary, this panel will reflect the parsed trip details instead of static starter content.
+              </p>
+            )}
           </div>
         </div>
       </section>

@@ -1,20 +1,8 @@
 import { normalizeTripPayload } from "@/lib/trip-utils";
-import type { TripPayload } from "@/lib/types";
+import type { MapPlace, TripPayload } from "@/lib/types";
 import tripData from "@/data/bali-trip.json";
 
 export const sampleTrip = normalizeTripPayload(tripData as TripPayload);
-
-export type MapPlace = {
-  id: string;
-  dayNumber: number;
-  name: string;
-  category: string;
-  timeLabel: string | null;
-  lat: number;
-  lng: number;
-  address: string;
-  image: string;
-};
 
 export const sampleMapPlaces: MapPlace[] = [
   {
