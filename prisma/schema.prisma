@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Trip {
+  id              String           @id @default(cuid())
+  title           String
+  destination     String?
+  startDate       DateTime?
+  endDate         DateTime?
+  durationDays    Int?
+  sourceFileName  String?
+  sourceType      String?
+  rawRouteText    String?
+  travelerSummary String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  travelers       Traveler[]
+  regions         TripRegion[]
+  flights         Flight[]
+  stays           Stay[]
+  days            TripDay[]
+  budgets         BudgetLine[]
+  notes           PracticalNote[]
+  recommendations Recommendation[]
+  routeLegs       RouteLeg[]
+}
+
+model Traveler {
+  id           String @id @default(cuid())
+  tripId       String
+  displayName  String
+  travelerType String
+  age          Int?
+  trip         Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+model TripRegion {
+  id       String @id @default(cuid())
+  tripId   String
+  name     String
+  nights   Int?
+  sequence Int
+  trip     Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+model Flight {
+  id               String   @id @default(cuid())
+  tripId           String
+  airline          String?
+  flightNumber     String?
+  direction        String?
+  fromCode         String?
+  fromName         String?
+  toCode           String?
+  toName           String?
+  departureLocal   DateTime?
+  arrivalLocal     DateTime?
+  pnr              String?
+  ticketNumber     String?
+  bookingReference String?
+  status           String?
+  sourceText       String?
+  trip             Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+model Stay {
+  id                String   @id @default(cuid())
+  tripId            String
+  sequence          Int
+  name              String
+  region            String?
+  address           String?
+  bookingSource     String?
+  bookingId         String?
+  roomType          String?
+  checkInDate       DateTime?
+  checkOutDate      DateTime?
+  nights            Int?
+  breakfastIncluded Boolean?
+  status            String?
+  lat               Float?
+  lng               Float?
+  placeId           String?
+  sourceText        String?
+  trip              Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+model TripDay {
+  id         String          @id @default(cuid())
+  tripId     String
+  dayNumber  Int
+  date       DateTime?
+  title      String
+  baseRegion String?
+  items      ItineraryItem[]
+  trip       Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+model ItineraryItem {
+  id               String           @id @default(cuid())
+  tripDayId        String
+  sequence         Int
+  category         String
+  name             String
+  placeQuery       String?
+  address          String?
+  timeLabel        String?
+  normalizedTime   String?
+  distanceText     String?
+  distanceKm       Float?
+  durationMin      Int?
+  costText         String?
+  kidFriendly      Boolean?
+  priority         String?
+  confidence       Float?
+  sourceText       String?
+  note             String?
+  lat              Float?
+  lng              Float?
+  placeId          String?
+  photoUrl         String?
+  rating           Float?
+  openingHoursJson Json?
+  tagsJson         Json?
+  warningsJson     Json?
+  tripDay          TripDay          @relation(fields: [tripDayId], references: [id], onDelete: Cascade)
+  routeFrom        RouteLeg[]       @relation("FromItem")
+  routeTo          RouteLeg[]       @relation("ToItem")
+  recommendations  Recommendation[] @relation("BaseItemRecommendations")
+}
+
+model RouteLeg {
+  id          String        @id @default(cuid())
+  tripId      String
+  fromItemId  String
+  toItemId    String
+  mode        String
+  distanceKm  Float?
+  durationMin Int?
+  polyline    String?
+  provider    String?
+  computedAt  DateTime      @default(now())
+  trip        Trip          @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  fromItem    ItineraryItem @relation("FromItem", fields: [fromItemId], references: [id], onDelete: Cascade)
+  toItem      ItineraryItem @relation("ToItem", fields: [toItemId], references: [id], onDelete: Cascade)
+}
+
+model Recommendation {
+  id            String         @id @default(cuid())
+  tripId        String
+  baseItemId    String?
+  dayNumber     Int?
+  category      String
+  name          String
+  address       String?
+  lat           Float?
+  lng           Float?
+  photoUrl      String?
+  rating        Float?
+  detourMinutes Int?
+  score         Float?
+  reason        String
+  provider      String?
+  sourceUrl     String?
+  trip          Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  baseItem      ItineraryItem? @relation("BaseItemRecommendations", fields: [baseItemId], references: [id], onDelete: SetNull)
+}
+
+model BudgetLine {
+  id          String @id @default(cuid())
+  tripId      String
+  category    String
+  subcategory String?
+  amountInr   Int?
+  lowInr      Int?
+  highInr     Int?
+  status      String?
+  sourceText  String?
+  trip        Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+model PracticalNote {
+  id       String @id @default(cuid())
+  tripId   String
+  noteType String
+  text     String
+  trip     Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
