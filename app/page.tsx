@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import MapClient from "@/components/MapClient";
 import { sampleMapPlaces, sampleTrip } from "@/lib/sample-trip";
+import type { TripPayload } from "@/lib/types";
 
 function cardStyle(selected = false): React.CSSProperties {
   return {
@@ -14,12 +15,29 @@ function cardStyle(selected = false): React.CSSProperties {
   };
 }
 
+type UploadState = {
+  status: "idle" | "uploading" | "success" | "error";
+  message: string | null;
+};
+
 export default function Page() {
+  const [trip, setTrip] = useState<TripPayload>(sampleTrip);
   const [selectedDay, setSelectedDay] = useState(1);
   const [search, setSearch] = useState("");
+  const [uploadState, setUploadState] = useState<UploadState>({ status: "idle", message: null });
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const day = sampleTrip.days.find((item) => item.dayNumber === selectedDay) ?? sampleTrip.days[0];
+  const days = trip.days;
+
+  useEffect(() => {
+    if (!days.some((item) => item.dayNumber === selectedDay)) {
+      setSelectedDay(days[0]?.dayNumber ?? 1);
+    }
+  }, [days, selectedDay]);
+
+  const day = days.find((item) => item.dayNumber === selectedDay) ?? days[0];
   const filteredItems = useMemo(() => {
+    if (!day) return [];
     return day.items.filter((item) => {
       const q = search.trim().toLowerCase();
       if (!q) return true;
@@ -29,6 +47,47 @@ export default function Page() {
 
   const dayDistance = filteredItems.reduce((acc, item) => acc + (item.distanceKm ?? 0), 0);
   const dayDuration = filteredItems.reduce((acc, item) => acc + (item.durationMin ?? 0), 0);
+  const activeMapPlaces = trip.trip.id === sampleTrip.trip.id ? sampleMapPlaces : [];
+
+  async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadState({ status: "uploading", message: `Uploading ${file.name}...` });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/extract", {
+        method: "POST",
+        body: formData
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Upload failed");
+      }
+
+      const nextTrip = payload.trip ?? payload.fallback;
+      if (!nextTrip) {
+        throw new Error("No trip data was returned from the upload.");
+      }
+
+      setTrip(nextTrip);
+      setSelectedDay(nextTrip.days[0]?.dayNumber ?? 1);
+      setSearch("");
+      setUploadState({
+        status: "success",
+        message: payload.warning ?? `Loaded ${file.name}.`
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upload failed";
+      setUploadState({ status: "error", message });
+    } finally {
+      event.target.value = "";
+    }
+  }
 
   return (
     <main style={{ maxWidth: 1280, margin: "0 auto", padding: 24 }}>
@@ -41,14 +100,46 @@ export default function Page() {
             </p>
           </div>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <button style={{ padding: "12px 16px", borderRadius: 999, border: "none", background: "#0f172a", color: "white" }}>
-              Upload PDF / DOCX
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx"
+              onChange={handleFileChange}
+              style={{ display: "none" }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadState.status === "uploading"}
+              style={{
+                padding: "12px 16px",
+                borderRadius: 999,
+                border: "none",
+                background: "#0f172a",
+                color: "white",
+                opacity: uploadState.status === "uploading" ? 0.7 : 1,
+                cursor: uploadState.status === "uploading" ? "wait" : "pointer"
+              }}
+            >
+              {uploadState.status === "uploading" ? "Uploading..." : "Upload PDF / DOCX"}
             </button>
           </div>
         </div>
+        {uploadState.message && (
+          <div
+            style={{
+              marginTop: 16,
+              padding: "12px 14px",
+              borderRadius: 16,
+              background: uploadState.status === "error" ? "#fef2f2" : "#f8fafc",
+              color: uploadState.status === "error" ? "#991b1b" : "#334155"
+            }}
+          >
+            {uploadState.message}
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 16 }}>
-          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Destination</div><div style={{ fontSize: 22, fontWeight: 700 }}>{sampleTrip.trip.destination}</div></div>
-          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Travel dates</div><div style={{ fontSize: 22, fontWeight: 700 }}>{sampleTrip.trip.startDate} to {sampleTrip.trip.endDate}</div></div>
+          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Destination</div><div style={{ fontSize: 22, fontWeight: 700 }}>{trip.trip.destination}</div></div>
+          <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Travel dates</div><div style={{ fontSize: 22, fontWeight: 700 }}>{trip.trip.startDate} to {trip.trip.endDate}</div></div>
           <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Filtered day distance</div><div style={{ fontSize: 22, fontWeight: 700 }}>{dayDistance.toFixed(1)} km</div></div>
           <div style={cardStyle()}><div style={{ color: "#64748b", fontSize: 14 }}>Filtered travel time</div><div style={{ fontSize: 22, fontWeight: 700 }}>{dayDuration} min</div></div>
         </div>
@@ -66,7 +157,7 @@ export default function Page() {
             />
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-            {sampleTrip.days.map((tripDay) => (
+            {days.map((tripDay) => (
               <button
                 key={tripDay.dayNumber}
                 onClick={() => setSelectedDay(tripDay.dayNumber)}
@@ -84,6 +175,14 @@ export default function Page() {
           </div>
 
           <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+            {filteredItems.length === 0 && (
+              <div style={cardStyle()}>
+                <div style={{ fontWeight: 700, fontSize: 18 }}>No itinerary items for this filter</div>
+                <p style={{ margin: "8px 0 0", color: "#475569" }}>
+                  Try a different search or choose another day.
+                </p>
+              </div>
+            )}
             {filteredItems.map((item) => (
               <div key={item.id} style={cardStyle()}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
@@ -109,7 +208,12 @@ export default function Page() {
         <div style={{ display: "grid", gap: 16 }}>
           <div style={cardStyle()}>
             <h2 style={{ marginTop: 0 }}>Map</h2>
-            <MapClient places={sampleMapPlaces} selectedDay={selectedDay} />
+            <MapClient places={activeMapPlaces} selectedDay={selectedDay} />
+            {activeMapPlaces.length === 0 && (
+              <p style={{ margin: "12px 0 0", color: "#475569" }}>
+                Live map points are only available for the bundled Bali sample until geocoding is added for uploaded trips.
+              </p>
+            )}
           </div>
 
           <div style={cardStyle()}>

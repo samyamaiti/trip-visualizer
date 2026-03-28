@@ -3,6 +3,7 @@ import mammoth from "mammoth";
 import OpenAI from "openai";
 import { EXTRACTION_SYSTEM_PROMPT, buildExtractionUserPrompt } from "@/lib/extraction-prompt";
 import { sampleTrip } from "@/lib/sample-trip";
+import { parseTripPayload } from "@/lib/trip-utils";
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,7 +44,17 @@ export async function POST(request: NextRequest) {
     });
 
     const outputText = response.output_text;
-    return NextResponse.json({ raw: outputText });
+    const parsedTrip = parseTripPayload(outputText);
+
+    if (!parsedTrip) {
+      return NextResponse.json({
+        warning: "The model response could not be parsed into trip JSON. Showing the sample trip instead.",
+        raw: outputText,
+        fallback: sampleTrip
+      });
+    }
+
+    return NextResponse.json({ trip: parsedTrip, raw: outputText });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Extraction failed" }, { status: 500 });

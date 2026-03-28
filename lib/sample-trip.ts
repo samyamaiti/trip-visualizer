@@ -1,7 +1,8 @@
+import { normalizeTripPayload } from "@/lib/trip-utils";
 import type { TripPayload } from "@/lib/types";
 import tripData from "@/data/bali-trip.json";
 
-export const sampleTrip = tripData as TripPayload;
+export const sampleTrip = normalizeTripPayload(tripData as TripPayload);
 
 export type MapPlace = {
   id: string;
